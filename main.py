@@ -4,66 +4,51 @@ import re
 from pyrogram import Client, filters, enums
 from pyrogram.errors import FloodWait
 
-# --- CONFIGURATION (Added as requested) ---
+# --- CONFIGURATION ---
 API_ID = 27343489
 API_HASH = "bb6da47b900d646484f58a5d19d64a68"
-BOT_TOKEN = "8207099625:AAF6DDZCZziiGUYrcETHiubC3SI4P0IecAs"
+# NOTE: BOT_TOKEN is REMOVED. We must log in as a User to see old requests.
 
 # --- LOGGING ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- INITIALIZE CLIENT ---
+# --- INITIALIZE CLIENT (USER MODE) ---
+# When you run this, check your TERMINAL/CONSOLE. 
+# It will ask for your Phone Number and OTP Code.
 app = Client(
-    "smart_accept_bot",
+    "my_user_account",
     api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
+    api_hash=API_HASH
 )
 
-@app.on_message(filters.regex(r"^/accept_(all|\d+)$") & (filters.group | filters.channel))
+@app.on_message(filters.command("accept", prefixes="/") & (filters.group | filters.channel | filters.private))
 async def targeted_approve(client, message):
+    # This block handles the command: /accept 10  or  /accept all
+    
     chat_id = message.chat.id
     
-    # --- SECURITY CHECK (FIXED) ---
-    # This block fixes the "NoneType object has no attribute id" error
-    
-    # Case 1: Standard User/Admin in a Group
-    if message.from_user:
-        user_id = message.from_user.id
-        try:
-            member = await client.get_chat_member(chat_id, user_id)
-            if member.status not in [enums.ChatMemberStatus.OWNER, enums.ChatMemberStatus.ADMINISTRATOR]:
-                await message.reply_text("❌ Access Denied: Admin only.", quote=True)
-                return
-        except Exception as e:
-            logger.error(f"Admin check failed: {e}")
-            return
-
-    # Case 2: Channel Post or Anonymous Admin (User is None)
-    # If the message comes from the chat itself (sender_chat), it is valid.
-    elif message.sender_chat:
-        if message.sender_chat.id != chat_id:
-            return
-    else:
-        # Unknown sender type, ignore
-        return
-
     # --- PARSE COMMAND ---
-    command_text = message.text.lower()
-    match = re.search(r"^/accept_(all|\d+)", command_text)
-    
-    if not match:
+    # Expected format: /accept 10  or /accept all
+    try:
+        command_parts = message.text.split()
+        if len(command_parts) < 2:
+            await message.reply_text("❌ Usage: `/accept 10` or `/accept all`", quote=True)
+            return
+            
+        argument = command_parts[1].lower()
+    except:
         return
 
-    argument = match.group(1) 
-    
     if argument == "all":
         limit = float('inf')
-        status_text = "Processing **ALL** requests..."
-    else:
+        status_text = "Processing **ALL** pending requests..."
+    elif argument.isdigit():
         limit = int(argument)
         status_text = f"Processing **{limit}** requests..."
+    else:
+        await message.reply_text("❌ Invalid number.", quote=True)
+        return
 
     # Send status message
     try:
@@ -76,6 +61,7 @@ async def targeted_approve(client, message):
     
     try:
         # --- PROCESS REQUESTS ---
+        # As a User, you CAN see the list!
         async for request in client.get_chat_join_requests(chat_id):
             
             if count >= limit:
@@ -89,7 +75,7 @@ async def targeted_approve(client, message):
                 if count % 20 == 0:
                     logger.info(f"Approved {count} users...")
                     
-                # Update Message (Edit less frequently to avoid Rate Limits)
+                # Update Message every 50 users
                 if count % 50 == 0:
                     try:
                         await status_msg.edit_text(f"⏳ Progress: Approved {count} users...")
@@ -97,9 +83,9 @@ async def targeted_approve(client, message):
                         pass
 
             except FloodWait as e:
-                wait_time = e.value + 1
+                wait_time = e.value + 5
                 logger.warning(f"Sleeping for {wait_time}s due to FloodWait...")
-                await status_msg.edit_text(f"⚠️ Rate Limit Hit. Pausing for {wait_time}s...")
+                await status_msg.edit_text(f"⚠️ Telegram Limit Hit. Pausing for {wait_time}s...")
                 await asyncio.sleep(wait_time)
                 
             except Exception as e:
@@ -110,5 +96,8 @@ async def targeted_approve(client, message):
     except Exception as e:
         await status_msg.edit_text(f"❌ Error: {str(e)}")
 
-print("Bot Started. Send command in Channel.")
+print("Bot Started in USER MODE.")
+print("1. Enter your Phone Number (with country code, e.g., +91...) when asked.")
+print("2. Enter the Code you receive on Telegram.")
+print("3. Go to your channel and type: /accept 50")
 app.run()
