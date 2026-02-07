@@ -42,7 +42,8 @@ async def start_handler(client, message):
     )
 
 # --- 2. ACCEPT COMMAND ---
-@app.on_message(filters.command("accept", prefixes="/") & (filters.channel | filters.group | filters.supergroup))
+# FIX: 'filters.supergroup' hata diya hai, ab ye perfectly chalega
+@app.on_message(filters.command("accept", prefixes="/") & (filters.channel | filters.group))
 async def approve_requests(client, message):
     chat_id = message.chat.id
     
@@ -103,10 +104,13 @@ async def approve_requests(client, message):
                 
                 # Update Status (Every 20 users)
                 if count % 20 == 0:
-                    await status_msg.edit_text(
-                        f"🔄 <b>Working...</b>\nApproved: <b>{count}</b> users\n\n<i>Type /cancel to stop.</i>",
-                        parse_mode=enums.ParseMode.HTML
-                    )
+                    try:
+                        await status_msg.edit_text(
+                            f"🔄 <b>Working...</b>\nApproved: <b>{count}</b> users\n\n<i>Type /cancel to stop.</i>",
+                            parse_mode=enums.ParseMode.HTML
+                        )
+                    except:
+                        pass
                 await asyncio.sleep(0.3) 
 
             except FloodWait as e:
@@ -130,7 +134,8 @@ async def approve_requests(client, message):
     active_tasks[chat_id] = False
 
 # --- 3. CANCEL COMMAND ---
-@app.on_message(filters.command("cancel", prefixes="/") & (filters.channel | filters.group | filters.supergroup))
+# FIX: Yahan bhi fix kar diya hai
+@app.on_message(filters.command("cancel", prefixes="/") & (filters.channel | filters.group))
 async def cancel_handler(client, message):
     chat_id = message.chat.id
     if active_tasks.get(chat_id):
@@ -140,5 +145,6 @@ async def cancel_handler(client, message):
         await message.reply_text("ℹ️ Koi active process nahi chal raha.", quote=True)
 
 # --- RUN ---
-print("✅ Official Userbot Started...")
+print("✅ Official Userbot Started (Fixed Version)...")
 app.run()
+
