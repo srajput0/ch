@@ -1,104 +1,144 @@
 import asyncio
 import logging
-from pyrogram import Client, filters
+from pyrogram import Client, filters, enums
 from pyrogram.errors import FloodWait
 
 # --- CONFIGURATION ---
-# Apne credentials yahan dalein
-API_ID = 27343489       # Aapka wahi ID
-API_HASH = "bb6da47b900d646484f58a5d19d64a68" # Aapka wahi Hash
-BOT_TOKEN = "8207099625:AAF6DDZCZziiGUYrcETHiubC3SI4P0IecAs" # 🔴 Yahan BotFather wala Token dalein
+API_ID = 27343489
+API_HASH = "bb6da47b900d646484f58a5d19d64a68"
 
 # --- LOGGING ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- INITIALIZE CLIENT (BOT MODE) ---
-# Yahan hum bot_token use kar rahe hain, isliye OTP nahi mangega
-app = Client(
-    "approval_bot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
-)
+# --- GLOBAL VARIABLES ---
+active_tasks = {}
 
-@app.on_message(filters.command("accept", prefixes="/") & (filters.group | filters.channel | filters.private))
-async def targeted_approve(client, message):
-    # Command format: /accept 10  ya  /accept all
-    
+# --- INITIALIZE CLIENT ---
+app = Client("public_worker_account", api_id=API_ID, api_hash=API_HASH)
+
+# --- HELPER: OFFICIAL MESSAGE TEXT ---
+def get_help_text():
+    return (
+        "🛡️ <b>Join Request Manager</b>\n\n"
+        "ℹ️ <b>How to Use:</b>\n"
+        "1. Is User ID ko apne Channel/Group mein <b>Admin</b> banayein.\n"
+        "2. <b>'Invite Users via Link'</b> ki permission ON rakhein.\n"
+        "3. Neeche diye gaye commands use karein.\n\n"
+        "⚙️ <b>Commands:</b>\n"
+        "• <code>/accept 100</code> » Sirf 100 users accept karein.\n"
+        "• <code>/accept all</code> » Saari pending requests accept karein.\n"
+        "• <code>/cancel</code> » Process ko beech mein rokein."
+    )
+
+# --- 1. START COMMAND ---
+@app.on_message(filters.command("start", prefixes="/") & filters.private)
+async def start_handler(client, message):
+    # Professional HTML Message
+    await message.reply_text(
+        get_help_text(),
+        quote=True,
+        parse_mode=enums.ParseMode.HTML
+    )
+
+# --- 2. ACCEPT COMMAND ---
+@app.on_message(filters.command("accept", prefixes="/") & (filters.channel | filters.group | filters.supergroup))
+async def approve_requests(client, message):
     chat_id = message.chat.id
     
-    # --- PARSE COMMAND ---
+    # --- CHECK ADMIN RIGHTS ---
+    # Check karein ki command dene wala admin hai ya nahi
     try:
-        command_parts = message.text.split()
-        if len(command_parts) < 2:
-            await message.reply_text("❌ Sahi tarika: `/accept 10` ya `/accept all`", quote=True)
-            return
-            
-        argument = command_parts[1].lower()
+        if message.from_user:
+            member = await client.get_chat_member(chat_id, message.from_user.id)
+            if member.status not in [enums.ChatMemberStatus.OWNER, enums.ChatMemberStatus.ADMINISTRATOR]:
+                return 
     except:
+        pass 
+
+    # --- PARSE COMMAND ---
+    args = message.command
+    # Agar user ne sirf /accept likha hai, toh usse Help Message dikhao
+    if len(args) < 2:
+        await message.reply_text(
+            get_help_text(),
+            quote=True,
+            parse_mode=enums.ParseMode.HTML
+        )
+        return
+        
+    arg = args[1].lower()
+    limit = float('inf') if arg == "all" else (int(arg) if arg.isdigit() else None)
+    
+    if limit is None:
+        await message.reply_text("❌ <b>Error:</b> Kripya sahi number daalein ya <code>all</code> likhein.", parse_mode=enums.ParseMode.HTML)
         return
 
-    # Limit set karna
-    if argument == "all":
-        limit = float('inf')
-        status_text = "**SABHI (All)** requests process ho rahi hain..."
-    elif argument.isdigit():
-        limit = int(argument)
-        status_text = f"**{limit}** requests process ho rahi hain..."
-    else:
-        await message.reply_text("❌ Galat number hai.", quote=True)
-        return
-
-    # Status Message bhejna
-    try:
-        status_msg = await message.reply_text(f"⏳ {status_text}", quote=True)
-    except Exception as e:
-        logger.error(f"Reply nahi bhej paya: {e}")
-        return
+    # --- PROCESS START ---
+    active_tasks[chat_id] = True
+    
+    # Official Status Message
+    status_msg = await message.reply_text(
+        f"⏳ <b>Processing Started...</b>\nTarget: <code>{arg.upper()}</code> Members\n\n<i>Rokne ke liye /cancel dabayein.</i>",
+        parse_mode=enums.ParseMode.HTML
+    )
     
     count = 0
-    
     try:
-        # --- PROCESS REQUESTS ---
-        # Bot API ke through pending requests fetch karna
         async for request in client.get_chat_join_requests(chat_id):
-            
+            # Check Cancel
+            if not active_tasks.get(chat_id, False):
+                await status_msg.edit_text(
+                    f"🛑 <b>Process Cancelled!</b>\nApproved: <b>{count}</b> users.",
+                    parse_mode=enums.ParseMode.HTML
+                )
+                return
+
             if count >= limit:
                 break
-                
+
             try:
-                # Request Approve karna
                 await client.approve_chat_join_request(chat_id, request.user.id)
                 count += 1
                 
-                # Console mein log karna
+                # Update Status (Every 20 users)
                 if count % 20 == 0:
-                    logger.info(f"Approved {count} users...")
-                    
-                # Message update karna (har 50 users ke baad taaki flood na ho)
-                if count % 50 == 0:
-                    try:
-                        await status_msg.edit_text(f"⏳ Progress: Abhi tak {count} users approve kiye...")
-                    except:
-                        pass
+                    await status_msg.edit_text(
+                        f"🔄 <b>Working...</b>\nApproved: <b>{count}</b> users\n\n<i>Type /cancel to stop.</i>",
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                await asyncio.sleep(0.3) 
 
             except FloodWait as e:
-                # Agar Telegram rok laga de (FloodWait)
-                wait_time = e.value + 5
-                logger.warning(f"Sleeping for {wait_time}s due to FloodWait...")
-                await status_msg.edit_text(f"⚠️ Telegram Limit Hit. {wait_time}s ke liye ruk raha hoon...")
-                await asyncio.sleep(wait_time)
-                
+                await status_msg.edit_text(f"😴 <b>Telegram Limit Hit:</b> {e.value}s wait kar raha hoon...", parse_mode=enums.ParseMode.HTML)
+                await asyncio.sleep(e.value + 2)
             except Exception as e:
-                logger.error(f"User approve nahi ho paya: {e}")
+                logger.error(f"Error: {e}")
 
-        await status_msg.edit_text(f"✅ **Kaam Khatam!**\n\nTotal approved: {count} members.")
+        # --- COMPLETED MESSAGE ---
+        await status_msg.edit_text(
+            f"✅ <b>Task Completed Successfully!</b>\n\n👥 Total Approved: <b>{count}</b> members.",
+            parse_mode=enums.ParseMode.HTML
+        )
 
     except Exception as e:
-        await status_msg.edit_text(f"❌ Error: {str(e)}\n\nMake sure Bot is Admin!")
+        await status_msg.edit_text(
+            f"❌ <b>Error Occurred:</b>\n<code>{e}</code>\n\n<i>Make sure mujhe Admin banaya hai!</i>",
+            parse_mode=enums.ParseMode.HTML
+        )
+    
+    active_tasks[chat_id] = False
 
-print("🤖 Bot Started!")
-print("1. Bot ko apne Channel/Group mein ADMIN banayein.")
-print("2. Command use karein: /accept 50")
+# --- 3. CANCEL COMMAND ---
+@app.on_message(filters.command("cancel", prefixes="/") & (filters.channel | filters.group | filters.supergroup))
+async def cancel_handler(client, message):
+    chat_id = message.chat.id
+    if active_tasks.get(chat_id):
+        active_tasks[chat_id] = False
+        await message.reply_text("🛑 <b>Stopping...</b>", parse_mode=enums.ParseMode.HTML)
+    else:
+        await message.reply_text("ℹ️ Koi active process nahi chal raha.", quote=True)
+
+# --- RUN ---
+print("✅ Official Userbot Started...")
 app.run()
