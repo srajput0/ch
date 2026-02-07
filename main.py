@@ -1,103 +1,104 @@
 import asyncio
 import logging
-import re
-from pyrogram import Client, filters, enums
+from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
 
 # --- CONFIGURATION ---
-API_ID = 27343489
-API_HASH = "bb6da47b900d646484f58a5d19d64a68"
-# NOTE: BOT_TOKEN is REMOVED. We must log in as a User to see old requests.
+# Apne credentials yahan dalein
+API_ID = 27343489       # Aapka wahi ID
+API_HASH = "bb6da47b900d646484f58a5d19d64a68" # Aapka wahi Hash
+BOT_TOKEN = "8207099625:AAF6DDZCZziiGUYrcETHiubC3SI4P0IecAs" # 🔴 Yahan BotFather wala Token dalein
 
 # --- LOGGING ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- INITIALIZE CLIENT (USER MODE) ---
-# When you run this, check your TERMINAL/CONSOLE. 
-# It will ask for your Phone Number and OTP Code.
+# --- INITIALIZE CLIENT (BOT MODE) ---
+# Yahan hum bot_token use kar rahe hain, isliye OTP nahi mangega
 app = Client(
-    "my_user_account",
+    "approval_bot",
     api_id=API_ID,
-    api_hash=API_HASH
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN
 )
 
 @app.on_message(filters.command("accept", prefixes="/") & (filters.group | filters.channel | filters.private))
 async def targeted_approve(client, message):
-    # This block handles the command: /accept 10  or  /accept all
+    # Command format: /accept 10  ya  /accept all
     
     chat_id = message.chat.id
     
     # --- PARSE COMMAND ---
-    # Expected format: /accept 10  or /accept all
     try:
         command_parts = message.text.split()
         if len(command_parts) < 2:
-            await message.reply_text("❌ Usage: `/accept 10` or `/accept all`", quote=True)
+            await message.reply_text("❌ Sahi tarika: `/accept 10` ya `/accept all`", quote=True)
             return
             
         argument = command_parts[1].lower()
     except:
         return
 
+    # Limit set karna
     if argument == "all":
         limit = float('inf')
-        status_text = "Processing **ALL** pending requests..."
+        status_text = "**SABHI (All)** requests process ho rahi hain..."
     elif argument.isdigit():
         limit = int(argument)
-        status_text = f"Processing **{limit}** requests..."
+        status_text = f"**{limit}** requests process ho rahi hain..."
     else:
-        await message.reply_text("❌ Invalid number.", quote=True)
+        await message.reply_text("❌ Galat number hai.", quote=True)
         return
 
-    # Send status message
+    # Status Message bhejna
     try:
         status_msg = await message.reply_text(f"⏳ {status_text}", quote=True)
     except Exception as e:
-        logger.error(f"Could not send reply: {e}")
+        logger.error(f"Reply nahi bhej paya: {e}")
         return
     
     count = 0
     
     try:
         # --- PROCESS REQUESTS ---
-        # As a User, you CAN see the list!
+        # Bot API ke through pending requests fetch karna
         async for request in client.get_chat_join_requests(chat_id):
             
             if count >= limit:
                 break
                 
             try:
+                # Request Approve karna
                 await client.approve_chat_join_request(chat_id, request.user.id)
                 count += 1
                 
-                # Log progress
+                # Console mein log karna
                 if count % 20 == 0:
                     logger.info(f"Approved {count} users...")
                     
-                # Update Message every 50 users
+                # Message update karna (har 50 users ke baad taaki flood na ho)
                 if count % 50 == 0:
                     try:
-                        await status_msg.edit_text(f"⏳ Progress: Approved {count} users...")
+                        await status_msg.edit_text(f"⏳ Progress: Abhi tak {count} users approve kiye...")
                     except:
                         pass
 
             except FloodWait as e:
+                # Agar Telegram rok laga de (FloodWait)
                 wait_time = e.value + 5
                 logger.warning(f"Sleeping for {wait_time}s due to FloodWait...")
-                await status_msg.edit_text(f"⚠️ Telegram Limit Hit. Pausing for {wait_time}s...")
+                await status_msg.edit_text(f"⚠️ Telegram Limit Hit. {wait_time}s ke liye ruk raha hoon...")
                 await asyncio.sleep(wait_time)
                 
             except Exception as e:
-                logger.error(f"Failed to approve user: {e}")
+                logger.error(f"User approve nahi ho paya: {e}")
 
-        await status_msg.edit_text(f"✅ **Task Completed**\n\nSuccessfully approved: {count} members.")
+        await status_msg.edit_text(f"✅ **Kaam Khatam!**\n\nTotal approved: {count} members.")
 
     except Exception as e:
-        await status_msg.edit_text(f"❌ Error: {str(e)}")
+        await status_msg.edit_text(f"❌ Error: {str(e)}\n\nMake sure Bot is Admin!")
 
-print("Bot Started in USER MODE.")
-print("1. Enter your Phone Number (with country code, e.g., +91...) when asked.")
-print("2. Enter the Code you receive on Telegram.")
-print("3. Go to your channel and type: /accept 50")
+print("🤖 Bot Started!")
+print("1. Bot ko apne Channel/Group mein ADMIN banayein.")
+print("2. Command use karein: /accept 50")
 app.run()
