@@ -3,7 +3,7 @@ import logging
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait
-from config import Config
+#from config import Config
 from database import is_authorized, add_user, set_channel_db, get_channel_db
 
 logging.basicConfig(level=logging.INFO)
