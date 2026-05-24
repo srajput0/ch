@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 active_tasks = {}
 
 # --- INITIALIZE CLIENT ---
-app = Client("public_worker_account2", api_id=API_ID, api_hash=API_HASH)
+app = Client("akpublic_worker_account2", api_id=API_ID, api_hash=API_HASH)
 
 # --- HELPER: OFFICIAL MESSAGE TEXT ---
 def get_help_text():
